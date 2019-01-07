@@ -23,7 +23,7 @@ use uuid::Uuid;
 use failure::Error;
 
 
-pub struct ApnsSync<C: Connect> {
+pub struct ApplePushClient<C: Connect> {
     production: bool,
     client: Client<C>,
     team_id: String,
@@ -37,19 +37,18 @@ struct Claim<'a> {
     iat: u64
 }
 
-impl<C: Connect + 'static> ApnsSync<C> {
-    pub fn new(connector: C, team_id: String, jwt_kid: String, jwt_key: Vec<u8>) -> Result<Self, Error> {
+impl<C: Connect + 'static> ApplePushClient<C> {
+    pub fn new(connector: C, team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Self {
         let client = Client::builder()
             .http2_only(true)
             .build(connector);
-        let apns = ApnsSync {
+        Self {
             production: true,
             client,
-            team_id,
-            jwt_kid,
-            jwt_key
-        };
-        Ok(apns)
+            team_id: team_id.to_owned(),
+            jwt_kid: jwt_kid.to_owned(),
+            jwt_key: jwt_key.to_owned()
+        }
     }
 
     /// Set API endpoint to use (production or development sandbox).
@@ -153,7 +152,7 @@ mod test {
 
     use self::hyper_rustls::HttpsConnector;
 
-    use super::{ApnsSync, NotificationBuilder};
+    use super::{ApplePushClient, NotificationBuilder};
 
 
     #[test]
@@ -165,9 +164,8 @@ mod test {
         let token = env::var("APNS_DEVICE_TOKEN").unwrap();
 
         let tls_connector = HttpsConnector::new(4);
-        let apns = ApnsSync::new(tls_connector, team_id, key_id, key)
-            .unwrap();
-        let n = NotificationBuilder::new(topic, token)
+        let apns = ApplePushClient::new(tls_connector, &team_id, &key_id, &key);
+        let n = NotificationBuilder::new(&topic, &token)
             .title("title")
             .build();
 
