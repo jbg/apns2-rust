@@ -84,7 +84,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
 
     /// Send a notification.
     /// Returns the UUID of the notification.
-    pub fn send(&self, n: Notification) -> Box<Future<Item=Uuid, Error=SendError> + Send> {
+    pub fn send(&self, n: Notification) -> Box<Future<Item=Uuid, Error=Error> + Send> {
         let id = n.id.unwrap_or_else(Uuid::new_v4);
         let body = ApnsRequest { aps: n.payload };
         let url: Uri = match self.build_url(&n.device_token).parse() {
@@ -121,7 +121,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
                 .and_then(move |response| {
                     let (head, body) = response.into_parts();
                     if head.status == StatusCode::OK {
-                        Box::new(future::ok(id)) as Box<Future<Item=Uuid, Error=SendError> + Send>
+                        Box::new(future::ok(id)) as Box<Future<Item=Uuid, Error=Error> + Send>
                     }
                     else {
                         Box::new(
@@ -135,7 +135,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
                                         reason
                                     }.into())
                                 })
-                        ) as Box<Future<Item=Uuid, Error=SendError> + Send>
+                        ) as Box<Future<Item=Uuid, Error=Error> + Send>
                     }
                 })
         )
