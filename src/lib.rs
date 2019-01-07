@@ -12,7 +12,8 @@ mod types;
 pub use self::types::*;
 
 mod error;
-use self::error::*;
+pub use self::error::{ApiError, SendError};
+use self::error::ErrorResponse;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -84,7 +85,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
 
     /// Send a notification.
     /// Returns the UUID of the notification.
-    pub fn send(&self, n: Notification) -> Box<Future<Item=Uuid, Error=Error> + Send> {
+    pub fn send(&self, n: Notification) -> Box<Future<Item=Uuid, Error=SendError> + Send> {
         let id = n.id.unwrap_or_else(Uuid::new_v4);
         let body = ApnsRequest { aps: n.payload };
         let url: Uri = match self.build_url(&n.device_token).parse() {
@@ -121,7 +122,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
                 .and_then(move |response| {
                     let (head, body) = response.into_parts();
                     if head.status == StatusCode::OK {
-                        Box::new(future::ok(id)) as Box<Future<Item=Uuid, Error=Error> + Send>
+                        Box::new(future::ok(id)) as Box<Future<Item=Uuid, Error=SendError> + Send>
                     }
                     else {
                         Box::new(
@@ -135,7 +136,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
                                         reason
                                     }.into())
                                 })
-                        ) as Box<Future<Item=Uuid, Error=Error> + Send>
+                        ) as Box<Future<Item=Uuid, Error=SendError> + Send>
                     }
                 })
         )
