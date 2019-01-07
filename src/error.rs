@@ -73,41 +73,41 @@ impl ApiErrorReason {
     fn to_str(&self) -> &str {
         use self::ApiErrorReason::*;
         match self {
-            &BadCollapseId => "BadCollapseId",
-            &BadDeviceToken => "BadDeviceToken",
-            &BadExpirationDate => "BadExpirationDate",
-            &BadMessageId => "BadMessageId",
-            &BadPriority => "BadPriority",
-            &BadTopic => "BadTopic",
-            &DeviceTokenNotForTopic => "DeviceTokenNotForTopic",
-            &DuplicateHeaders => "DuplicateHeaders",
-            &IdleTimeout => "IdleTimeout",
-            &MissingDeviceToken => "MissingDeviceToken",
-            &MissingTopic => "MissingTopic",
-            &PayloadEmpty => "PayloadEmpty",
-            &TopicDisallowed => "TopicDisallowed",
-            &BadCertificate => "BadCertificate",
-            &BadCertificateEnvironment => "BadCertificateEnvironment",
-            &ExpiredProviderToken => "ExpiredProviderToken",
-            &Forbidden => "Forbidden",
-            &InvalidProviderToken => "InvalidProviderToken",
-            &MissingProviderToken => "MissingProviderToken",
-            &BadPath => "BadPath",
-            &MethodNotAllowed => "MethodNotAllowed",
-            &Unregistered => "Unregistered",
-            &PayloadTooLarge => "PayloadTooLarge",
-            &TooManyProviderTokenUpdates => "TooManyProviderTokenUpdates",
-            &TooManyRequests => "TooManyRequests",
-            &InternalServerError => "InternalServerError",
-            &ServiceUnavailable => "ServiceUnavailable",
-            &Shutdown => "Shutdown",
-            &Other(ref val) => val,
+            BadCollapseId => "BadCollapseId",
+            BadDeviceToken => "BadDeviceToken",
+            BadExpirationDate => "BadExpirationDate",
+            BadMessageId => "BadMessageId",
+            BadPriority => "BadPriority",
+            BadTopic => "BadTopic",
+            DeviceTokenNotForTopic => "DeviceTokenNotForTopic",
+            DuplicateHeaders => "DuplicateHeaders",
+            IdleTimeout => "IdleTimeout",
+            MissingDeviceToken => "MissingDeviceToken",
+            MissingTopic => "MissingTopic",
+            PayloadEmpty => "PayloadEmpty",
+            TopicDisallowed => "TopicDisallowed",
+            BadCertificate => "BadCertificate",
+            BadCertificateEnvironment => "BadCertificateEnvironment",
+            ExpiredProviderToken => "ExpiredProviderToken",
+            Forbidden => "Forbidden",
+            InvalidProviderToken => "InvalidProviderToken",
+            MissingProviderToken => "MissingProviderToken",
+            BadPath => "BadPath",
+            MethodNotAllowed => "MethodNotAllowed",
+            Unregistered => "Unregistered",
+            PayloadTooLarge => "PayloadTooLarge",
+            TooManyProviderTokenUpdates => "TooManyProviderTokenUpdates",
+            TooManyRequests => "TooManyRequests",
+            InternalServerError => "InternalServerError",
+            ServiceUnavailable => "ServiceUnavailable",
+            Shutdown => "Shutdown",
+            Other(ref val) => val,
         }
     }
 
     pub fn is_bad_device_token(&self) -> bool {
         match self {
-            &ApiErrorReason::BadDeviceToken => true,
+            ApiErrorReason::BadDeviceToken => true,
             _ => false,
         }
     }
@@ -129,7 +129,7 @@ pub struct ApiError {
 
 impl ApiError {
     pub fn is_bad_device_token(&self) -> bool {
-        return self.reason.is_bad_device_token();
+        self.reason.is_bad_device_token()
     }
 }
 
@@ -161,28 +161,46 @@ pub enum SendError {
 impl SendError {
     pub fn as_api_error(&self) -> Option<&ApiError> {
         match self {
-            &SendError::Api(ref e) => Some(e),
+            SendError::Api(ref e) => Some(e),
             _ => None,
         }
     }
 
     pub fn is_bad_device_token(&self) -> bool {
         match self {
-            &SendError::Api(ref e) => e.is_bad_device_token(),
+            SendError::Api(ref e) => e.is_bad_device_token(),
             _ => false,
         }
     }
 }
 
-impl From<::curl::Error> for SendError {
-    fn from(e: ::curl::Error) -> Self {
+impl From<hyper::Error> for SendError {
+    fn from(e: hyper::Error) -> Self {
         SendError::Other(e.into())
     }
 }
 
-impl From<::serde_json::Error> for SendError {
-    fn from(e: ::serde_json::Error) -> Self {
+impl From<hyper::http::uri::InvalidUri> for SendError {
+    fn from(e: hyper::http::uri::InvalidUri) -> Self {
         SendError::Other(e.into())
+    }
+}
+
+impl From<hyper::http::Error> for SendError {
+    fn from(e: hyper::http::Error) -> Self {
+        SendError::Other(e.into())
+    }
+}
+
+impl From<serde_json::Error> for SendError {
+    fn from(e: serde_json::Error) -> Self {
+        SendError::Other(e.into())
+    }
+}
+
+impl From<failure::Error> for SendError {
+    fn from(e: failure::Error) -> Self {
+        SendError::Other(e)
     }
 }
 

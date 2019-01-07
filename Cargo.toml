@@ -1,18 +1,24 @@
 [package]
-name = "apns2"
+name = "apns2-rust"
 description = "Apple Push Notification Service (apns) client library"
 version = "0.1.0"
 authors = ["Christoph Herzog <chris@theduke.at>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
 categories = ["network-programming"]
-documentation = "https://docs.rs/apns2"
-repository = "https://github.com/theduke/apns2-rust"
+repository = "https://github.com/jbg/apns2-rust"
 
 [dependencies]
-uuid = { version = "0.6.0", features = ["serde", "v4"] }
 failure = "0.1.1"
-curl = "0.4.11"
+futures = "0.1"
+hyper = "0.12"
+jsonwebtoken = "5.0"
 serde = "1.0.27"
 serde_derive = "1.0.27"
 serde_json = "1.0.9"
+uuid = { version = "0.6.0", features = ["serde", "v4"] }
+
+[dev-dependencies]
+base64 = "0.9"
+hyper-rustls = "0.15"
+tokio = "0.1"
