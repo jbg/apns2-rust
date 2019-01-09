@@ -15,6 +15,7 @@ mod error;
 pub use self::error::{ApiError, SendError};
 use self::error::ErrorResponse;
 
+use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::{future, Future, Stream};
@@ -41,7 +42,7 @@ pub struct ApplePushClient<C: Connect> {
     team_id: String,
     jwt_kid: String,
     jwt_key: Vec<u8>,
-    jwt: Option<CachedToken>
+    jwt: RwLock<Option<CachedToken>>
 }
 
 impl<C: Connect + 'static> ApplePushClient<C> {
@@ -55,7 +56,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
             team_id: team_id.to_owned(),
             jwt_kid: jwt_kid.to_owned(),
             jwt_key: jwt_key.to_owned(),
-            jwt: None
+            jwt: RwLock::new(None)
         }
     }
 
@@ -74,10 +75,10 @@ impl<C: Connect + 'static> ApplePushClient<C> {
         format!("{}/3/device/{}", root, device_token)
     }
 
-    fn generate_jwt(&mut self) -> Result<String, Error> {
+    fn generate_jwt(&self) -> Result<String, Error> {
         let since_the_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
-        if let Some(ref token) = self.jwt {
+        if let Some(ref token) = *self.jwt.read().unwrap() {
             if since_the_epoch - token.cached_at < (3600 - 60) {
                 return Ok(token.token.clone());
             }
@@ -95,7 +96,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
             &self.jwt_key
         )?;
         
-        self.jwt = Some(CachedToken {
+        *self.jwt.write().unwrap() = Some(CachedToken {
             cached_at: since_the_epoch,
             token: jwt.clone()
         });
