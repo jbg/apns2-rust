@@ -1,50 +1,32 @@
-# apns2-rust
+# apple-push
 
-A Rust crate for sending push notifications to iOS devices via the [APNS][apns]
-http/2 API.
+A Rust crate for sending push notifications to iOS devices via the [APNS][apns] http/2 API.
 
 ## Usage
 
 Cargo.toml:
-```toml
-[dependencies]
-apns2 = "*"
-failure = "*"
-```
-
 ```rust
-extern crate apns2;
-extern crate failure;
+use apple_push::ApplePushClient;
+use hyper_tls::HttpsConnector;
+use tokio::runtime::Runtime;
 
-use failure::Error;
-
-fn send(device_token: String, alert: String) -> Result<(), Error> {
-    let apns = apns2::Apns::with_certificate(
-        "certs/apns_cert.p12", // Path to p12 certificate + key db file.
-        Some("passphrase".to_string()), // Passphraase used for the p12 file.
-    )?;
-    let notification = NotificationBuilder::new(topic, token)
-        .title("title")
-        .body("body")
-        .sound("somesound.mp3")
-        .badge(5)
-        .build();
-    apns.send(n)?;
-    
-    Ok(())
-}
+let connector = HttpsConnector::new(4);
+let apns = ApplePushClient::new(connector, "TEAM_ID", "KEY_ID", "KEY");
+let notification = NotificationBuilder::new("TOPIC", "DEVICE_TOKEN")
+    .title("TITLE")
+    .body("BODY")
+    .sound("SOUND_FILE")
+    .badge(5)
+    .build();
+let mut rt = Runtime::new().unwrap();
+rt.block_on(apns.send(n)).unwrap();
 ```
 
 ## Client
 
-Sadly, no native http/2 Rust libraries are mature enough to be used, so this
-crate currently uses cURL via [rust-curl][rust-curl]. 
-Once the ecosystem catches up, a native Rust solution will be used.
+This library is based on [apns2-rust][apns2-rust] which uses cURL bindings and only supports certificate authentication. It has been rewritten to use [hyper][hyper] and JSON web token authentication. A [fork of jsonwebtoken][jsonwebtoken-fork] is currently used to add ECDSA support.
 
-## Todo
-
-* Add JWT authentication token support
-* Add async tokio implementation with tokio-curl
+A TLS connector must be provided; the example above uses [hyper-tls][hyper-tls]. Sadly, due to an [issue][ring-issue] with the Ring crypto library, [rustls][rustls] cannot be used, because the jsonwebtoken fork uses a newer version of ring than rustls does (to get ECDSA signing support) and ring does not support multiple versions being linked into the same project.
 
 ## License
 
@@ -53,4 +35,9 @@ This library is dual-licensed under Apache and MIT.
 Check the license files in this repo for details.
 
 [apns]: https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/APNSOverview.html
-[rust-curl]: https://github.com/alexcrichton/curl-rust
+[apns2-rust]: https://github.com/theduke/apns2-rust
+[hyper]: https://github.com/hyperium/hyper
+[jsonwebtoken-fork]: https://github.com/jbg/jsonwebtoken
+[hyper-tls]: https://github.com/hyperium/hyper-tls
+[ring-issue]: https://github.com/briansmith/ring/issues/535
+[rustls]: https://github.com/ctz/rustls
