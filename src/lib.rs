@@ -105,7 +105,7 @@ impl<C: Connect + 'static> ApplePushClient<C> {
 
     /// Send a notification.
     /// Returns the UUID of the notification.
-    pub fn send(&mut self, n: Notification) -> Box<Future<Item=Uuid, Error=SendError> + Send> {
+    pub fn send(&self, n: Notification) -> Box<Future<Item=Uuid, Error=SendError> + Send> {
         let id = n.id.unwrap_or_else(Uuid::new_v4);
         let body = ApnsRequest { aps: n.payload };
         let url: Uri = match self.build_url(&n.device_token).parse() {
@@ -192,7 +192,7 @@ mod test {
         let token = env::var("APNS_DEVICE_TOKEN").unwrap();
 
         let tls_connector = HttpsConnector::new(4).unwrap();
-        let mut apns = ApplePushClient::new(tls_connector, &team_id, &key_id, &key);
+        let apns = ApplePushClient::new(tls_connector, &team_id, &key_id, &key);
         let n = NotificationBuilder::new(&topic, &token)
             .title("title")
             .build();
