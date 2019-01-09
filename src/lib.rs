@@ -24,18 +24,24 @@ use uuid::Uuid;
 use failure::Error;
 
 
-pub struct ApplePushClient<C: Connect> {
-    production: bool,
-    client: Client<C>,
-    team_id: String,
-    jwt_kid: String,
-    jwt_key: Vec<u8>
+struct CachedToken {
+    token: String,
+    cached_at: u64
 }
 
 #[derive(Serialize, Debug)]
 struct Claim<'a> {
     iss: &'a str,
     iat: u64
+}
+
+pub struct ApplePushClient<C: Connect> {
+    production: bool,
+    client: Client<C>,
+    team_id: String,
+    jwt_kid: String,
+    jwt_key: Vec<u8>,
+    jwt: Option<CachedToken>
 }
 
 impl<C: Connect + 'static> ApplePushClient<C> {
@@ -48,7 +54,8 @@ impl<C: Connect + 'static> ApplePushClient<C> {
             client,
             team_id: team_id.to_owned(),
             jwt_kid: jwt_kid.to_owned(),
-            jwt_key: jwt_key.to_owned()
+            jwt_key: jwt_key.to_owned(),
+            jwt: None
         }
     }
 
@@ -67,25 +74,37 @@ impl<C: Connect + 'static> ApplePushClient<C> {
         format!("{}/3/device/{}", root, device_token)
     }
 
-    fn generate_jwt(&self) -> Result<String, Error> {
+    fn generate_jwt(&mut self) -> Result<String, Error> {
+        let since_the_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+
+        if let Some(ref token) = self.jwt {
+            if since_the_epoch - token.cached_at < (3600 - 60) {
+                return Ok(token.token.clone());
+            }
+        }
+
         let mut header = jsonwebtoken::Header::default();
         header.kid = Some(self.jwt_kid.clone());
-        let since_the_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        Ok(
-            jsonwebtoken::encode(
-                &header,
-                &Claim {
-                    iss: &self.team_id,
-                    iat: since_the_epoch.as_secs()
-                },
-                &self.jwt_key
-            )?
-        )
+        header.alg = jsonwebtoken::Algorithm::ES256;  // APNS supports only ES256
+        let jwt = jsonwebtoken::encode(
+            &header,
+            &Claim {
+                iss: &self.team_id,
+                iat: since_the_epoch
+            },
+            &self.jwt_key
+        )?;
+        
+        self.jwt = Some(CachedToken {
+            cached_at: since_the_epoch,
+            token: jwt.clone()
+        });
+        Ok(jwt)
     }
 
     /// Send a notification.
     /// Returns the UUID of the notification.
-    pub fn send(&self, n: Notification) -> Box<Future<Item=Uuid, Error=SendError> + Send> {
+    pub fn send(&mut self, n: Notification) -> Box<Future<Item=Uuid, Error=SendError> + Send> {
         let id = n.id.unwrap_or_else(Uuid::new_v4);
         let body = ApnsRequest { aps: n.payload };
         let url: Uri = match self.build_url(&n.device_token).parse() {
@@ -96,21 +115,28 @@ impl<C: Connect + 'static> ApplePushClient<C> {
             Ok(t) => t,
             Err(e) => return Box::new(future::err(e.into()))
         };
+        println!("token: {}", jwt);
         let body = match serde_json::to_vec(&body) {
             Ok(b) => b,
             Err(e) => return Box::new(future::err(e.into()))
         };
 
-        let req = match Request::builder()
-            .method(Method::POST)
-            .uri(url)
-            .header("authorization", format!("bearer {}", jwt))
-            .header("apns-id", id.to_string())
-            .header("apns-expiration", n.expiration.map(|x| x.to_string()).unwrap_or_else(|| "".to_string()))
-            .header("apns-priority", n.priority.map(|x| x.to_int().to_string()).unwrap_or_else(|| "".to_string()))
-            .header("apns-topic", n.topic)
-            .header("apns-collapse-id", n.collapse_id.map(|x| x.as_str().to_string()).unwrap_or_else(|| "".to_string()))
-            .body(Body::from(body)) {
+        let mut builder = Request::builder();
+        builder.method(Method::POST);
+        builder.uri(url);
+        builder.header("authorization", format!("bearer {}", jwt));
+        builder.header("apns-id", id.to_string());
+        builder.header("apns-topic", n.topic);
+        if let Some(expiration) = n.expiration {
+            builder.header("apns-expiration", expiration.to_string());
+        }
+        if let Some(priority) = n.priority {
+            builder.header("apns-priority", priority.to_int().to_string());
+        }
+        if let Some(collapse_id) = n.collapse_id {
+            builder.header("apns-collapse-id", collapse_id.as_str());
+        }
+        let req = match builder.body(Body::from(body)) {
             Ok(r) => r,
             Err(e) => return Box::new(future::err(e.into()))
         };
@@ -146,12 +172,12 @@ impl<C: Connect + 'static> ApplePushClient<C> {
 #[cfg(test)]
 mod test {
     extern crate base64;
-    extern crate hyper_rustls;
+    extern crate hyper_tls;
     extern crate tokio;
 
     use std::env;
 
-    use self::hyper_rustls::HttpsConnector;
+    use self::hyper_tls::HttpsConnector;
 
     use super::{ApplePushClient, NotificationBuilder};
 
@@ -164,8 +190,8 @@ mod test {
         let topic = env::var("APNS_TOPIC").unwrap();
         let token = env::var("APNS_DEVICE_TOKEN").unwrap();
 
-        let tls_connector = HttpsConnector::new(4);
-        let apns = ApplePushClient::new(tls_connector, &team_id, &key_id, &key);
+        let tls_connector = HttpsConnector::new(4).unwrap();
+        let mut apns = ApplePushClient::new(tls_connector, &team_id, &key_id, &key);
         let n = NotificationBuilder::new(&topic, &token)
             .title("title")
             .build();
