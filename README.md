@@ -11,7 +11,7 @@ use hyper_tls::HttpsConnector;
 use tokio::runtime::Runtime;
 
 let connector = HttpsConnector::new(4);
-let apns = ApplePushClient::new(connector, "TEAM_ID", "KEY_ID", "KEY");
+let mut apns = ApplePushClient::new(connector, "TEAM_ID", "KEY_ID", "KEY");
 let notification = NotificationBuilder::new("TOPIC", "DEVICE_TOKEN")
     .title("TITLE")
     .body("BODY")
