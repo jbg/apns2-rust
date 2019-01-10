@@ -116,7 +116,6 @@ impl<C: Connect + 'static> ApplePushClient<C> {
             Ok(t) => t,
             Err(e) => return Box::new(future::err(e.into()))
         };
-        println!("token: {}", jwt);
         let body = match serde_json::to_vec(&body) {
             Ok(b) => b,
             Err(e) => return Box::new(future::err(e.into()))
