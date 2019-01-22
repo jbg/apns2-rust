@@ -4,7 +4,6 @@ A Rust crate for sending push notifications to iOS devices via the [APNS][apns] 
 
 ## Usage
 
-Cargo.toml:
 ```rust
 use apple_push::ApplePushClient;
 use hyper_tls::HttpsConnector;
