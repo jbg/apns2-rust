@@ -132,10 +132,10 @@ pub(crate) struct ApnsRequest {
 /// This includes other options not contained in the payload.
 /// These options are transferred with HTTP request headers.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Notification<'a> {
+pub struct Notification {
     /// The topic to use. Usually the app bundle id.
-    pub topic: &'a str,
-    pub device_token: &'a str,
+    pub topic: String,
+    pub device_token: String,
     pub payload: Payload,
 
     /// Optional id identifying the message.
@@ -147,12 +147,12 @@ pub struct Notification<'a> {
     pub collapse_id: Option<CollapseId>,
 }
 
-impl<'a> Notification<'a> {
+impl Notification {
     /// Create a new notification.
-    pub fn new(topic: &'a str, device_token: &'a str, payload: Payload) -> Self {
+    pub fn new(topic: &str, device_token: &str, payload: Payload) -> Self {
         Notification {
-            topic,
-            device_token,
+            topic: topic.into(),
+            device_token: device_token.into(),
             payload,
             id: None,
             expiration: None,
@@ -163,12 +163,12 @@ impl<'a> Notification<'a> {
 }
 
 /// A builder for convenient construction of notifications.
-pub struct NotificationBuilder<'a> {
-    notification: Notification<'a>,
+pub struct NotificationBuilder {
+    notification: Notification,
 }
 
-impl<'a> NotificationBuilder<'a> {
-    pub fn new(topic: &'a str, device_id: &'a str) -> Self {
+impl NotificationBuilder {
+    pub fn new(topic: &str, device_id: &str) -> Self {
         NotificationBuilder {
             notification: Notification::new(topic, device_id, Payload::default()),
         }
@@ -257,7 +257,7 @@ impl<'a> NotificationBuilder<'a> {
         self
     }
 
-    pub fn build(self) -> Notification<'a> {
+    pub fn build(self) -> Notification {
         self.notification
     }
 }
