@@ -15,10 +15,11 @@ mod error;
 pub use self::error::{ApiError, SendError};
 use self::error::ErrorResponse;
 
+use std::future::Future;
 use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use futures::{future, Future, Stream};
+use futures::{compat::{Future01CompatExt, Stream01CompatExt}, future, FutureExt, TryFutureExt, TryStreamExt};
 use hyper::{Body, Client, Method, Request, StatusCode, Uri};
 use hyper::client::connect::Connect;
 use uuid::Uuid;
@@ -105,20 +106,20 @@ impl<C: Connect + 'static> ApplePushClient<C> {
 
     /// Send a notification.
     /// Returns the UUID of the notification.
-    pub fn send(&self, n: Notification) -> Box<Future<Item=Uuid, Error=SendError> + Send> {
+    pub fn send(&self, n: Notification) -> impl Future<Output=Result<Uuid, SendError>> {
         let id = n.id.unwrap_or_else(Uuid::new_v4);
         let body = ApnsRequest { aps: n.payload };
         let url: Uri = match self.build_url(&n.device_token).parse() {
             Ok(u) => u,
-            Err(e) => return Box::new(future::err(e.into()))
+            Err(e) => return future::err(e.into()).boxed()
         };
         let jwt = match self.generate_jwt() {
             Ok(t) => t,
-            Err(e) => return Box::new(future::err(e.into()))
+            Err(e) => return future::err(e.into()).boxed()
         };
         let body = match serde_json::to_vec(&body) {
             Ok(b) => b,
-            Err(e) => return Box::new(future::err(e.into()))
+            Err(e) => return future::err(e.into()).boxed()
         };
 
         let mut builder = Request::builder();
@@ -138,34 +139,34 @@ impl<C: Connect + 'static> ApplePushClient<C> {
         }
         let req = match builder.body(Body::from(body)) {
             Ok(r) => r,
-            Err(e) => return Box::new(future::err(e.into()))
+            Err(e) => return future::err(e.into()).boxed()
         };
 
-        Box::new(
-            self.client
-                .request(req)
-                .map_err(|e| e.into())
-                .and_then(move |response| {
-                    let (head, body) = response.into_parts();
-                    if head.status == StatusCode::OK {
-                        Box::new(future::ok(id)) as Box<Future<Item=Uuid, Error=SendError> + Send>
-                    }
-                    else {
-                        Box::new(
-                            body
-                                .concat2()
-                                .map_err(|e| e.into())
-                                .and_then(move |body| {
-                                    let reason = ErrorResponse::parse_payload(&body);
-                                    Err(ApiError {
-                                        status: u32::from(head.status.as_u16()),
-                                        reason
-                                    }.into())
-                                })
-                        ) as Box<Future<Item=Uuid, Error=SendError> + Send>
-                    }
-                })
-        )
+        self.client
+            .request(req)
+            .compat()
+            .map_err(|e| e.into())
+            .and_then(move |response| {
+                let (head, body) = response.into_parts();
+                if head.status == StatusCode::OK {
+                    future::ok(id).boxed()
+                }
+                else {
+                    body
+                        .compat()
+                        .try_concat()
+                        .map_err(|e| e.into())
+                        .and_then(move |body| {
+                            let reason = ErrorResponse::parse_payload(&body);
+                            future::err(ApiError {
+                                status: u32::from(head.status.as_u16()),
+                                reason
+                            }.into())
+                        })
+                        .boxed()
+                }
+            })
+            .boxed()
     }
 }
 

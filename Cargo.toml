@@ -1,7 +1,7 @@
 [package]
 name = "apple-push"
 description = "Apple Push Notification Service (apns) client library"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Jasper Bryant-Greene <jbg@rf.net.nz>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
@@ -10,7 +10,7 @@ repository = "https://github.com/jbg/apns2-rust"
 
 [dependencies]
 failure = "0.1.1"
-futures = "0.1"
+futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
 hyper = "0.12"
 jsonwebtoken = { git = "https://github.com/jbg/jsonwebtoken" }
 serde = "1.0.27"
