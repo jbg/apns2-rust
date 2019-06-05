@@ -174,20 +174,8 @@ impl SendError {
     }
 }
 
-impl From<hyper::Error> for SendError {
-    fn from(e: hyper::Error) -> Self {
-        SendError::Other(e.into())
-    }
-}
-
-impl From<hyper::http::uri::InvalidUri> for SendError {
-    fn from(e: hyper::http::uri::InvalidUri) -> Self {
-        SendError::Other(e.into())
-    }
-}
-
-impl From<hyper::http::Error> for SendError {
-    fn from(e: hyper::http::Error) -> Self {
+impl From<reqwest::Error> for SendError {
+    fn from(e: reqwest::Error) -> Self {
         SendError::Other(e.into())
     }
 }

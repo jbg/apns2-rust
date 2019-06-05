@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate failure;
 extern crate futures;
-extern crate hyper;
+extern crate reqwest;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -20,8 +20,7 @@ use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::{compat::{Future01CompatExt, Stream01CompatExt}, future, FutureExt, TryFutureExt, TryStreamExt};
-use hyper::{Body, Client, Method, Request, StatusCode, Uri};
-use hyper::client::connect::Connect;
+use reqwest::r#async::Client;
 use uuid::Uuid;
 use failure::Error;
 
@@ -37,20 +36,22 @@ struct Claim<'a> {
     iat: u64
 }
 
-pub struct ApplePushClient<C: Connect> {
+pub struct ApplePushClient {
     production: bool,
-    client: Client<C>,
+    client: Client,
     team_id: String,
     jwt_kid: String,
     jwt_key: Vec<u8>,
     jwt: RwLock<Option<CachedToken>>
 }
 
-impl<C: Connect + 'static> ApplePushClient<C> {
-    pub fn new(connector: C, team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Self {
+impl ApplePushClient {
+    pub fn new(team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Self {
         let client = Client::builder()
-            .http2_only(true)
-            .build(connector);
+            .use_rustls_tls()
+            .h2_prior_knowledge()
+            .build()
+            .unwrap();
         Self {
             production: true,
             client,
@@ -109,10 +110,6 @@ impl<C: Connect + 'static> ApplePushClient<C> {
     pub fn send(&self, n: Notification) -> impl Future<Output=Result<Uuid, SendError>> {
         let id = n.id.unwrap_or_else(Uuid::new_v4);
         let body = ApnsRequest { aps: n.payload };
-        let url: Uri = match self.build_url(&n.device_token).parse() {
-            Ok(u) => u,
-            Err(e) => return future::err(e.into()).boxed()
-        };
         let jwt = match self.generate_jwt() {
             Ok(t) => t,
             Err(e) => return future::err(e.into()).boxed()
@@ -122,44 +119,41 @@ impl<C: Connect + 'static> ApplePushClient<C> {
             Err(e) => return future::err(e.into()).boxed()
         };
 
-        let mut builder = Request::builder();
-        builder.method(Method::POST);
-        builder.uri(url);
-        builder.header("authorization", format!("bearer {}", jwt));
-        builder.header("apns-id", id.to_string());
-        builder.header("apns-topic", n.topic);
+        let mut req = self.client
+            .post(&self.build_url(&n.device_token))
+            .header("authorization", format!("bearer {}", jwt))
+            .header("apns-id", id.to_string())
+            .header("apns-topic", n.topic)
+            .body(body);
+        
         if let Some(expiration) = n.expiration {
-            builder.header("apns-expiration", expiration.to_string());
+            req = req.header("apns-expiration", expiration.to_string());
         }
         if let Some(priority) = n.priority {
-            builder.header("apns-priority", priority.to_int().to_string());
+            req = req.header("apns-priority", priority.to_int().to_string());
         }
         if let Some(collapse_id) = n.collapse_id {
-            builder.header("apns-collapse-id", collapse_id.as_str());
+            req = req.header("apns-collapse-id", collapse_id.as_str());
         }
-        let req = match builder.body(Body::from(body)) {
-            Ok(r) => r,
-            Err(e) => return future::err(e.into()).boxed()
-        };
 
-        self.client
-            .request(req)
+        req.send()
             .compat()
             .map_err(|e| e.into())
             .and_then(move |response| {
-                let (head, body) = response.into_parts();
-                if head.status == StatusCode::OK {
+                let status = response.status();
+                if status.is_success() {
                     future::ok(id).boxed()
                 }
                 else {
-                    body
+                    response
+                        .into_body()
                         .compat()
                         .try_concat()
                         .map_err(|e| e.into())
                         .and_then(move |body| {
                             let reason = ErrorResponse::parse_payload(&body);
                             future::err(ApiError {
-                                status: u32::from(head.status.as_u16()),
+                                status: u32::from(status.as_u16()),
                                 reason
                             }.into())
                         })
@@ -173,12 +167,9 @@ impl<C: Connect + 'static> ApplePushClient<C> {
 #[cfg(test)]
 mod test {
     extern crate base64;
-    extern crate hyper_tls;
     extern crate tokio;
 
     use std::env;
-
-    use self::hyper_tls::HttpsConnector;
 
     use super::{ApplePushClient, NotificationBuilder};
 
@@ -191,8 +182,7 @@ mod test {
         let topic = env::var("APNS_TOPIC").unwrap();
         let token = env::var("APNS_DEVICE_TOKEN").unwrap();
 
-        let tls_connector = HttpsConnector::new(4).unwrap();
-        let apns = ApplePushClient::new(tls_connector, &team_id, &key_id, &key);
+        let apns = ApplePushClient::new(&team_id, &key_id, &key);
         let n = NotificationBuilder::new(&topic, &token)
             .title("title")
             .build();

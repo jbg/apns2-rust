@@ -11,8 +11,8 @@ repository = "https://github.com/jbg/apns2-rust"
 [dependencies]
 failure = "0.1.1"
 futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
-hyper = "0.12"
 jsonwebtoken = { git = "https://github.com/jbg/jsonwebtoken" }
+reqwest = { version = "0.9.17", default-features = false, features = ["rustls-tls", "trust-dns"] }
 serde = "1.0.27"
 serde_derive = "1.0.27"
 serde_json = "1.0.9"
@@ -20,5 +20,4 @@ uuid = { version = "0.6.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 base64 = "0.9"
-hyper-tls = "0.3"
 tokio = "0.1"
