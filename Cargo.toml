@@ -12,7 +12,7 @@ repository = "https://github.com/jbg/apns2-rust"
 failure = "0.1.1"
 futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
 jsonwebtoken = "6.0.1"
-reqwest = { version = "0.9.17", default-features = false, features = ["rustls-tls", "trust-dns"] }
+reqwest = { version = "0.9.17", default-features = false, features = ["rustls-tls"] }
 serde = "1.0.27"
 serde_derive = "1.0.27"
 serde_json = "1.0.9"
