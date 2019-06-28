@@ -9,15 +9,15 @@ categories = ["network-programming"]
 repository = "https://github.com/jbg/apns2-rust"
 
 [dependencies]
-failure = "0.1.1"
+failure = { version = "0.1.1", default-features = false }
 futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
 jsonwebtoken = "6.0.1"
-reqwest = { version = "0.9.17", default-features = false, features = ["rustls-tls"] }
-serde = "1.0.27"
-serde_derive = "1.0.27"
+reqwest = { version = "0.9.18", default-features = false, features = ["rustls-tls"] }
+serde = "1.0.94"
+serde_derive = "1.0.94"
 serde_json = "1.0.9"
-uuid = { version = "0.6.0", features = ["serde", "v4"] }
+uuid = { version = "0.7.4", features = ["serde", "v4"] }
 
 [dev-dependencies]
-base64 = "0.9"
+base64 = "0.10.1"
 tokio = "0.1"
