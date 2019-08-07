@@ -1,63 +1,45 @@
-#[macro_use]
-extern crate failure;
-extern crate futures;
-extern crate reqwest;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-extern crate uuid;
+#![feature(async_await)]
 
 mod types;
-pub use self::types::*;
-
 mod error;
-pub use self::error::{ApiError, SendError};
-use self::error::ErrorResponse;
 
-use std::future::Future;
 use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use futures::{compat::{Future01CompatExt, Stream01CompatExt}, future, FutureExt, TryFutureExt, TryStreamExt};
-use reqwest::r#async::Client;
+use biscuit::{jwa, jws, JWT};
+use futures::{compat::{Future01CompatExt, Stream01CompatExt}, TryStreamExt};
+use hyper::{client::connect::Connect, Client, Request};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use failure::Error;
+
+pub use self::error::{ApiError, SendError};
+use self::error::ErrorResponse;
+pub use self::types::*;
 
 
 struct CachedToken {
     token: String,
-    cached_at: u64
+    cached_at: i64
 }
 
-#[derive(Serialize, Debug)]
-struct Claim<'a> {
-    iss: &'a str,
-    iat: u64
-}
-
-pub struct ApplePushClient {
+pub struct ApplePushClient<T: Connect + 'static> {
     production: bool,
-    client: Client,
+    client: Client<T>,
     team_id: String,
     jwt_kid: String,
-    jwt_key: Vec<u8>,
+    jwt_key: jws::Secret,
     jwt: RwLock<Option<CachedToken>>
 }
 
-impl ApplePushClient {
-    pub fn new(team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Self {
-        let client = Client::builder()
-            .use_rustls_tls()
-            .h2_prior_knowledge()
-            .build()
-            .unwrap();
+impl<T: Connect + 'static> ApplePushClient<T> {
+    pub fn new(client: Client<T>, team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Self {
         Self {
             production: true,
             client,
             team_id: team_id.to_owned(),
             jwt_kid: jwt_kid.to_owned(),
-            jwt_key: jwt_key.to_owned(),
+            jwt_key: jws::Secret::Bytes(jwt_key.to_owned()),
             jwt: RwLock::new(None)
         }
     }
@@ -78,7 +60,7 @@ impl ApplePushClient {
     }
 
     fn generate_jwt(&self) -> Result<String, Error> {
-        let since_the_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let since_the_epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
         if let Some(ref token) = *self.jwt.read().unwrap() {
             if since_the_epoch - token.cached_at < (3600 - 60) {
@@ -86,108 +68,68 @@ impl ApplePushClient {
             }
         }
 
-        let mut header = jsonwebtoken::Header::default();
-        header.kid = Some(self.jwt_kid.clone());
-        header.alg = jsonwebtoken::Algorithm::ES256;  // APNS supports only ES256
-        let jwt = jsonwebtoken::encode(
-            &header,
-            &Claim {
-                iss: &self.team_id,
-                iat: since_the_epoch
+        #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+        struct PrivateClaims {}
+        let claims = biscuit::ClaimsSet::<PrivateClaims> {
+            registered: biscuit::RegisteredClaims {
+                issuer: Some(self.team_id.parse()?),
+                issued_at: Some(since_the_epoch.into()),
+                ..Default::default()
             },
-            &self.jwt_key
-        )?;
+            private: PrivateClaims {},
+        };
+        let header = jws::RegisteredHeader {
+            algorithm: jwa::SignatureAlgorithm::ES256,
+            key_id: Some(self.jwt_kid.clone()),
+            ..Default::default()
+        };
+        let jwt = JWT::new_decoded(header.into(), claims);
+        let encoded = jwt.into_encoded(&self.jwt_key).unwrap().unwrap_encoded().to_string();
         
         *self.jwt.write().unwrap() = Some(CachedToken {
             cached_at: since_the_epoch,
-            token: jwt.clone()
+            token: encoded.clone()
         });
-        Ok(jwt)
+        Ok(encoded)
     }
 
     /// Send a notification.
     /// Returns the UUID of the notification.
-    pub fn send(&self, n: Notification) -> impl Future<Output=Result<Uuid, SendError>> {
+    pub async fn send(&self, n: Notification) -> Result<Uuid, SendError> {
         let id = n.id.unwrap_or_else(Uuid::new_v4);
         let body = ApnsRequest { aps: n.payload };
-        let jwt = match self.generate_jwt() {
-            Ok(t) => t,
-            Err(e) => return future::err(e.into()).boxed()
-        };
-        let body = match serde_json::to_vec(&body) {
-            Ok(b) => b,
-            Err(e) => return future::err(e.into()).boxed()
-        };
+        let jwt = self.generate_jwt().map_err(|e| SendError::from(e))?;
+        let body = serde_json::to_vec(&body)?;
 
-        let mut req = self.client
-            .post(&self.build_url(&n.device_token))
-            .header("authorization", format!("bearer {}", jwt))
-            .header("apns-id", id.to_string())
-            .header("apns-topic", n.topic)
-            .body(body);
+        let mut req = Request::post(&self.build_url(&n.device_token));
+        let headers = req.headers_mut().unwrap();
+        headers.insert("authorization", format!("bearer {}", jwt).parse()?);
+        headers.insert("apns-id", id.to_string().parse()?);
+        headers.insert("apns-topic", n.topic.parse()?);
         
         if let Some(expiration) = n.expiration {
-            req = req.header("apns-expiration", expiration.to_string());
+            headers.insert("apns-expiration", expiration.to_string().parse()?);
         }
         if let Some(priority) = n.priority {
-            req = req.header("apns-priority", priority.to_int().to_string());
+            headers.insert("apns-priority", priority.to_int().to_string().parse()?);
         }
         if let Some(collapse_id) = n.collapse_id {
-            req = req.header("apns-collapse-id", collapse_id.as_str());
+            headers.insert("apns-collapse-id", collapse_id.as_str().parse()?);
         }
 
-        req.send()
-            .compat()
-            .map_err(|e| e.into())
-            .and_then(move |response| {
-                let status = response.status();
-                if status.is_success() {
-                    future::ok(id).boxed()
-                }
-                else {
-                    response
-                        .into_body()
-                        .compat()
-                        .try_concat()
-                        .map_err(|e| e.into())
-                        .and_then(move |body| {
-                            let reason = ErrorResponse::parse_payload(&body);
-                            future::err(ApiError {
-                                status: u32::from(status.as_u16()),
-                                reason
-                            }.into())
-                        })
-                        .boxed()
-                }
-            })
-            .boxed()
+        let res = self.client.request(req.body(body.into())?).compat().await?;
+        let status = res.status();
+        if status.is_success() {
+            Ok(id)
+        }
+        else {
+            let body = res.into_body().compat().try_concat().await?;
+            let reason = ErrorResponse::parse_payload(&body);
+            Err(ApiError {
+                status: status.as_u16() as u32,
+                reason,
+            }.into())
+        }
     }
 }
 
-#[cfg(test)]
-mod test {
-    extern crate base64;
-    extern crate tokio;
-
-    use std::env;
-
-    use super::{ApplePushClient, NotificationBuilder};
-
-
-    #[test]
-    fn test() {
-        let team_id = env::var("APNS_TEAM_ID").unwrap();
-        let key_id = env::var("APNS_KEY_ID").unwrap();
-        let key = base64::decode(&env::var("APNS_KEY").unwrap()).unwrap();
-        let topic = env::var("APNS_TOPIC").unwrap();
-        let token = env::var("APNS_DEVICE_TOKEN").unwrap();
-
-        let apns = ApplePushClient::new(&team_id, &key_id, &key);
-        let n = NotificationBuilder::new(&topic, &token)
-            .title("title")
-            .build();
-
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(apns.send(n)).unwrap();
-    }
-}

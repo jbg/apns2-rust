@@ -1,4 +1,7 @@
+use failure::Fail;
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
+
 
 /// APNS production endpoint.
 pub static APN_URL_PRODUCTION: &'static str = "https://api.push.apple.com";

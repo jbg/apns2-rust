@@ -1,4 +1,6 @@
-use failure::Error;
+use failure::{Error, Fail};
+use serde::{Deserialize, Serialize};
+
 
 /// The reason for a failure returned by the APN api.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -174,8 +176,20 @@ impl SendError {
     }
 }
 
-impl From<reqwest::Error> for SendError {
-    fn from(e: reqwest::Error) -> Self {
+impl From<hyper::Error> for SendError {
+    fn from(e: hyper::Error) -> Self {
+        SendError::Other(e.into())
+    }
+}
+
+impl From<http::Error> for SendError {
+    fn from(e: http::Error) -> Self {
+        SendError::Other(e.into())
+    }
+}
+
+impl From<http::header::InvalidHeaderValue> for SendError {
+    fn from(e: http::header::InvalidHeaderValue) -> Self {
         SendError::Other(e.into())
     }
 }
