@@ -1,17 +1,16 @@
-#![feature(async_await)]
-
 mod types;
 mod error;
 
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use biscuit::{jwa, jws, JWT};
 use futures::{compat::{Future01CompatExt, Stream01CompatExt}, TryStreamExt};
 use hyper::{client::connect::Connect, Client, Request};
+use ring::signature::{EcdsaKeyPair, ECDSA_P256_SHA256_FIXED_SIGNING};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use failure::Error;
+use failure::{Error, format_err};
 
 pub use self::error::{ApiError, SendError};
 use self::error::ErrorResponse;
@@ -33,15 +32,16 @@ pub struct ApplePushClient<T: Connect + 'static> {
 }
 
 impl<T: Connect + 'static> ApplePushClient<T> {
-    pub fn new(client: Client<T>, team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Self {
-        Self {
+    pub fn new(client: Client<T>, team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Result<Self, Error> {
+        let keypair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, jwt_key).map_err(|e| format_err!("bad key: {:?}", e))?;
+        Ok(Self {
             production: true,
             client,
             team_id: team_id.to_owned(),
             jwt_kid: jwt_kid.to_owned(),
-            jwt_key: jws::Secret::Bytes(jwt_key.to_owned()),
+            jwt_key: jws::Secret::EcdsaKeyPair(Arc::new(keypair)),
             jwt: RwLock::new(None)
-        }
+        })
     }
 
     /// Set API endpoint to use (production or development sandbox).

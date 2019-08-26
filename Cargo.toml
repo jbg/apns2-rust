@@ -12,9 +12,10 @@ edition = "2018"
 [dependencies]
 biscuit = "0.3.1"
 failure = { version = "0.1.5", default-features = false }
-futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.18", features = ["compat"] }
 http = "0.1.18"
 hyper = "0.12.33"
+ring = "0.16.7"
 serde = { version = "1.0.94", features = ["derive"] }
 serde_json = "1.0.9"
 uuid = { version = "0.7.4", features = ["serde", "v4"] }
