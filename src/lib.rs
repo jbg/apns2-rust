@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use biscuit::{jwa, jws, JWT};
-use futures::{compat::{Future01CompatExt, Stream01CompatExt}, TryStreamExt};
+use futures::stream::TryStreamExt;
 use hyper::{client::connect::Connect, Client, Request};
 use ring::signature::{EcdsaKeyPair, ECDSA_P256_SHA256_FIXED_SIGNING};
 use serde::{Deserialize, Serialize};
@@ -117,13 +117,13 @@ impl<T: Connect + 'static> ApplePushClient<T> {
             headers.insert("apns-collapse-id", collapse_id.as_str().parse()?);
         }
 
-        let res = self.client.request(req.body(body.into())?).compat().await?;
+        let res = self.client.request(req.body(body.into())?).await?;
         let status = res.status();
         if status.is_success() {
             Ok(id)
         }
         else {
-            let body = res.into_body().compat().try_concat().await?;
+            let body = res.into_body().try_concat().await?;
             let reason = ErrorResponse::parse_payload(&body);
             Err(ApiError {
                 status: status.as_u16() as u32,

@@ -1,7 +1,7 @@
 [package]
 name = "apple-push"
 description = "Apple Push Notification Service (apns) client library"
-version = "0.2.0"
+version = "0.3.0-alpha.1"
 authors = ["Jasper Bryant-Greene <jbg@rf.net.nz>"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
@@ -12,14 +12,14 @@ edition = "2018"
 [dependencies]
 biscuit = "0.3.1"
 failure = { version = "0.1.5", default-features = false }
-futures-preview = { version = "0.3.0-alpha.18", features = ["compat"] }
+futures-preview = "0.3.0-alpha.19"
 http = "0.1.18"
-hyper = "0.12.33"
-ring = "0.16.7"
-serde = { version = "1.0.94", features = ["derive"] }
-serde_json = "1.0.9"
+hyper = { version = "0.13.0-alpha.4", features = ["nightly", "unstable-stream"] }
+ring = "0.16.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 uuid = { version = "0.7.4", features = ["serde", "v4"] }
 
 [dev-dependencies]
 base64 = "0.10.1"
-tokio = "0.1"
+tokio = "0.2.0-alpha.6"
