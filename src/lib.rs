@@ -5,12 +5,13 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use biscuit::{jwa, jws, JWT};
-use futures::stream::TryStreamExt;
-use hyper::{client::connect::Connect, Client, Request};
+use bytes::buf::BufExt;
+use failure::{Error, format_err};
+use hyper::{Body, client::connect::Connection, Client, Request, service::Service, Uri};
 use ring::signature::{EcdsaKeyPair, ECDSA_P256_SHA256_FIXED_SIGNING};
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncRead, AsyncWrite};
 use uuid::Uuid;
-use failure::{Error, format_err};
 
 pub use self::error::{ApiError, SendError};
 use self::error::ErrorResponse;
@@ -22,17 +23,29 @@ struct CachedToken {
     cached_at: i64
 }
 
-pub struct ApplePushClient<T: Connect + 'static> {
+pub struct ApplePushClient<S>
+where
+    S: Service<Uri> + Clone + Send + Sync + 'static,
+    S::Response: Connection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    S::Future: Send + Unpin + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     production: bool,
-    client: Client<T>,
+    client: Client<S, Body>,
     team_id: String,
     jwt_kid: String,
     jwt_key: jws::Secret,
     jwt: RwLock<Option<CachedToken>>
 }
 
-impl<T: Connect + 'static> ApplePushClient<T> {
-    pub fn new(client: Client<T>, team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Result<Self, Error> {
+impl<S> ApplePushClient<S>
+where
+    S: Service<Uri> + Clone + Send + Sync + 'static,
+    S::Response: Connection + AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    S::Future: Send + Unpin + 'static,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    pub fn new(client: Client<S, Body>, team_id: &str, jwt_kid: &str, jwt_key: &[u8]) -> Result<Self, Error> {
         let keypair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, jwt_key).map_err(|e| format_err!("bad key: {:?}", e))?;
         Ok(Self {
             production: true,
@@ -123,8 +136,8 @@ impl<T: Connect + 'static> ApplePushClient<T> {
             Ok(id)
         }
         else {
-            let body = res.into_body().try_concat().await?;
-            let reason = ErrorResponse::parse_payload(&body);
+            let body = hyper::body::aggregate(res.into_body()).await?;
+            let reason = ErrorResponse::parse_payload(body.reader());
             Err(ApiError {
                 status: status.as_u16() as u32,
                 reason,

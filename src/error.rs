@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use failure::{Error, Fail};
 use serde::{Deserialize, Serialize};
 
@@ -141,11 +143,11 @@ pub(crate) struct ErrorResponse {
 }
 
 impl ErrorResponse {
-    pub fn parse_payload(data: &[u8]) -> ApiErrorReason {
-        match ::serde_json::from_slice::<ErrorResponse>(data) {
+    pub fn parse_payload<R: Read>(reader: R) -> ApiErrorReason {
+        match ::serde_json::from_reader::<_, ErrorResponse>(reader) {
             Ok(response) => ApiErrorReason::from_str(&response.reason),
             Err(_) => {
-                let msg = format!("Unknown API response: {:?}", data);
+                let msg = format!("Unknown API response");
                 ApiErrorReason::Other(msg)
             }
         }
