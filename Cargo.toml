@@ -10,7 +10,7 @@ repository = "https://github.com/jbg/apns2-rust"
 edition = "2018"
 
 [dependencies]
-biscuit = "0.3.1"
+biscuit = "0.4.1"
 bytes = "0.5.2"
 failure = "0.1.5"
 futures = "0.3.1"
